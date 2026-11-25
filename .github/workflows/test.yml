@@ -30,3 +30,16 @@ jobs:
           export PYTHONPATH="$PWD/src:$PWD/tests:$PWD/tests/fixtures"
           .venv/bin/python -m unittest -v test_cli test_fabric test_transaction
           xvfb-run -a .venv/bin/python tests/test_gui.py
+
+  nix-checks:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: cachix/install-nix-action@382a9ed9481c7c1f94f68b72ef105b3417c73877 # v32.1.0
+      - name: Run flake checks
+        run: >-
+          nix build --no-link --no-update-lock-file
+          .#checks.x86_64-linux.lint

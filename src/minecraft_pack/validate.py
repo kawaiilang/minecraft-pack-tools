@@ -8,11 +8,14 @@ from pathlib import Path
 from . import json_guard as json
 from .data import Metadata, child, index_entries, mod_specs, read_toml, require, sha256
 from .fabric_deps import validate_fabric_dependencies
+from .settings import ValidationSettings, validate_kind
 from .versions import Artifact, Snapshot, check_versions
 
 
-def validate_source(root: Path, kind: str) -> dict[str, Artifact]:
-    require(kind == "mod", "Unknown pack policy")
+def validate_source(
+    root: Path, kind: str, settings: ValidationSettings
+) -> dict[str, Artifact]:
+    validate_kind(kind)
     snapshot = Snapshot.parse(json.load(root / "modrinth-lock.json"))
     provenance = check_versions(root, snapshot)
     specs = mod_specs(root)
@@ -25,19 +28,16 @@ def validate_source(root: Path, kind: str) -> dict[str, Artifact]:
             for path, artifact in provenance.items()
         },
         fabric_by_hash=snapshot.fabric,
+        java_version=settings.java_version,
     )
-    # This release hold protects the next bulk update even when today's JARs agree.
-    if any(spec.version in ("fs5l9Q1U", "ewg6u30j") for spec in specs):
-        sodium = next((spec for spec in specs if spec.project == "AANobbMI"), None)
-        require(
-            sodium is not None and sodium.pinned,
-            "Keep Sodium pinned until the dependent mods are reviewed",
-        )
+    settings.check_pins(specs)
     return provenance
 
 
-def validate_pack(root: Path, kind: str = "mod") -> None:
-    validate_archive(root, validate_source(root, kind))
+def validate_pack(
+    root: Path, kind: str = "mod", *, settings: ValidationSettings
+) -> None:
+    validate_archive(root, validate_source(root, kind, settings))
 
 
 def validate_archive(root: Path, provenance: dict[str, Artifact]) -> None:

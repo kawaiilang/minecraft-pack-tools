@@ -158,6 +158,7 @@ class FabricPackTests(PackTestCase):
                 "mods/sodium-extra.pw.toml": "h_extra",
             },
             {"h_sod": sodium_092, "h_iris": iris_1117, "h_extra": extra_095},
+            java_version="25",
         )
 
         # Sodium 0.9.3 breaks Iris <=1.12.0
@@ -168,6 +169,7 @@ class FabricPackTests(PackTestCase):
                 [make_spec("sodium"), make_spec("iris")],
                 {"mods/sodium.pw.toml": "h_sod", "mods/iris.pw.toml": "h_iris"},
                 {"h_sod": sodium_093, "h_iris": iris_1117},
+                java_version="25",
             )
 
         # More Culling 1.9.2 breaks Sodium <=0.9.3-beta.1
@@ -178,6 +180,7 @@ class FabricPackTests(PackTestCase):
                 [make_spec("sodium"), make_spec("moreculling")],
                 {"mods/sodium.pw.toml": "h_sod", "mods/moreculling.pw.toml": "h_mc"},
                 {"h_sod": sodium_092, "h_mc": moreculling_192},
+                java_version="25",
             )
 
         # Sodium Extra 0.9.5 requires exact Sodium 0.9.2+mc26.3
@@ -191,6 +194,7 @@ class FabricPackTests(PackTestCase):
                     "mods/sodium-extra.pw.toml": "h_extra",
                 },
                 {"h_sod": sodium_093, "h_extra": extra_095},
+                java_version="25",
             )
 
         # Jar-in-Jar and provides satisfy dependencies; side/environment mismatch fails
@@ -210,6 +214,7 @@ class FabricPackTests(PackTestCase):
             [make_spec("host", "both")],
             {"mods/host.pw.toml": "h_host"},
             {"h_host": host_mod},
+            java_version="25",
         )
         with self.assertRaisesRegex(ValueError, "environment 'client' disagrees"):
             validate_fabric_dependencies(
@@ -218,6 +223,7 @@ class FabricPackTests(PackTestCase):
                 [make_spec("iris", "server")],
                 {"mods/iris.pw.toml": "h_iris"},
                 {"h_iris": iris_1117},
+                java_version="25",
             )
 
     def test_nested_selection_and_sides(self) -> None:
@@ -241,6 +247,7 @@ class FabricPackTests(PackTestCase):
                 specs,
                 {m.id: m.id for m in mods},
                 {m.id: m for m in mods},
+                java_version="25",
             )
 
         check(parent, newer, consumer, blocker)
@@ -284,7 +291,12 @@ class FabricPackTests(PackTestCase):
 
         def check(mod: FabricMod) -> None:
             validate_fabric_dependencies(
-                "26.3", loader, [spec], {"client": "hash"}, {"hash": mod}
+                "26.3",
+                loader,
+                [spec],
+                {"client": "hash"},
+                {"hash": mod},
+                java_version="25",
             )
 
         mod = fabric_mod("consumer")
@@ -315,6 +327,7 @@ class FabricPackTests(PackTestCase):
                 "consumer": replace(mod, depends={"mixinextras": [">=1.0"]}),
                 "standalone": newer,
             },
+            java_version="25",
         )
 
     def test_jar_schema_and_read_limits(self) -> None:

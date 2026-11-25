@@ -310,7 +310,7 @@ def validate_fabric_dependencies(
     specs: list[Metadata],
     sha512_by_path: dict[str, str],
     fabric_by_hash: dict[str, FabricMod],
-    java_version: str = "25",
+    java_version: str,
 ) -> None:
     mods: list[tuple[Metadata, FabricMod]] = []
     owners: dict[str, str] = {}

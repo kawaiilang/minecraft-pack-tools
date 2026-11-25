@@ -25,12 +25,16 @@ class GuiTest(unittest.TestCase):
         self.calls = self.root / "calls.jsonl"
         fake = (
             f"#!{sys.executable}\n"
-            + """import json, pathlib, sys, time
+            + """import argparse, json, pathlib, sys, time
 args = sys.argv[1:]
 root = pathlib.Path(__file__).parent
 with (root / 'calls.jsonl').open('a') as calls:
     calls.write(json.dumps([pathlib.Path(sys.argv[0]).name, *args]) + '\\n')
-operation = args[2]
+parser = argparse.ArgumentParser()
+for option in ('--pack-dir', '--java-version', '--policy'):
+    parser.add_argument(option)
+_, operations = parser.parse_known_args(args)
+operation = operations[0]
 if operation == 'list':
     print(json.dumps({'name': 'Fixture', 'minecraft': '26.3', 'fabric': '0.19.5', 'entries': [
         {'id': 'example', 'name': 'Example', 'side': 'both', 'pinned': False, 'version': 'v1', 'filename': 'example.jar', 'category': 'mods'}]}))
@@ -67,6 +71,7 @@ else:
         return [json.loads(line) for line in self.calls.read_text().splitlines()]
 
     def test_routing_and_callbacks(self):
+        self.assertIn("--java-version", self.window.policy.get_text())
         self.assertEqual(len(self.window.rows), 1)
         self.window.listbox.select_row(self.window.listbox.get_row_at_index(0))
         self.assertEqual(self.calls_list()[-1][0], "minecraft-pack")
@@ -115,6 +120,30 @@ else:
         self.window.remove()
         self.wait_idle()
         self.assertIn("remove", [call[3] for call in self.calls_list()])
+
+    def test_forwards_target_and_policy_to_child(self):
+        self.window.destroy()
+        policy = self.root / "release policy.json"
+        self.window = ui.ManagerWindow(
+            self.app, self.root, self.root, java_version="21", policy=policy
+        )
+        self.wait_idle()
+        self.assertIn("Java: 21", self.window.policy.get_text())
+        self.window.run("validate")
+        self.wait_idle()
+        self.assertEqual(
+            self.calls_list()[-1],
+            [
+                "minecraft-pack",
+                "--pack-dir",
+                str(self.root),
+                "--java-version",
+                "21",
+                "--policy",
+                str(policy),
+                "validate",
+            ],
+        )
 
     def test_failure_and_pack_dir_change(self):
         self.window.project.set_text("broken")

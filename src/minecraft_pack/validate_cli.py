@@ -2,8 +2,8 @@
 
 import argparse
 import sys
-from pathlib import Path
 
+from .settings import ValidationSettings, add_validation_options, path_argument
 from .validate import validate_pack
 
 
@@ -12,11 +12,13 @@ def main(argv: list[str] | None = None) -> int:
         prog="minecraft-pack-validate",
         description="Validate pack source, hashes, Fabric compatibility lock, and exported .mrpack without network access.",
     )
-    parser.add_argument("pack_dir", type=Path, help="Path to the pack directory")
+    parser.add_argument("pack_dir", type=path_argument, help="Path to the pack directory")
     parser.add_argument("kind", nargs="?", default="mod", help="Pack kind (default: mod)")
+    add_validation_options(parser)
     args = parser.parse_args(argv)
     try:
-        validate_pack(args.pack_dir, str(args.kind))
+        settings = ValidationSettings.from_options(args.java_version, args.policy)
+        validate_pack(args.pack_dir, str(args.kind), settings=settings)
     except Exception as error:
         print(error, file=sys.stderr)
         return 1

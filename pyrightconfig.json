@@ -3,6 +3,7 @@
     "src/minecraft_pack/__init__.py",
     "src/minecraft_pack/json_guard.py",
     "src/minecraft_pack/data.py",
+    "src/minecraft_pack/settings.py",
     "src/minecraft_pack/fabric_version.py",
     "src/minecraft_pack/fabric_deps.py",
     "src/minecraft_pack/versions.py",

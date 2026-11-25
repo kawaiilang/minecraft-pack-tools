@@ -153,15 +153,27 @@
           pkgs,
           pack,
           kind ? "mod",
+          javaVersion,
+          policy ? null,
           name ? "minecraft-${kind}.mrpack",
         }:
         let
           inherit (pkgs) lib;
           cli = mkCli { inherit pkgs; };
+          validatorArgs = [
+            "${pack}"
+            kind
+            "--java-version"
+            javaVersion
+          ]
+          ++ lib.optionals (policy != null) [
+            "--policy"
+            "${policy}"
+          ];
         in
         pkgs.runCommandLocal name { src = pack + "/client.mrpack"; } ''
           export PYTHONDONTWRITEBYTECODE=1
-          ${lib.getExe' cli "minecraft-pack-validate"} ${pack} ${lib.escapeShellArg kind}
+          ${lib.getExe' cli "minecraft-pack-validate"} ${lib.escapeShellArgs validatorArgs}
           cp "$src" "$out"
         '';
     in
@@ -201,6 +213,16 @@
         in
         {
           default = self.packages.${system}.default;
+
+          validated-pack = mkValidatedPack {
+            inherit pkgs;
+            kind = "demo";
+            javaVersion = "21";
+            pack = pkgs.runCommand "example-fabric-pack" { nativeBuildInputs = [ python ]; } ''
+              export PYTHONPATH="${./src}:${./tests/fixtures}"
+              python3 -c 'import sys; from pathlib import Path; from minecraft_pack_fixture import fixture; fixture(Path(sys.argv[1]))' "$out"
+            '';
+          };
 
           unit-tests =
             pkgs.runCommand "minecraft-pack-tools-unit-tests"

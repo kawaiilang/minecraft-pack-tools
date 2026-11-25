@@ -1,18 +1,10 @@
 """Generic CLI entry point operating directly on any packwiz Fabric pack directory."""
 
 import argparse
-import os
 import sys
-from pathlib import Path
 
 from .manager import main as manager_main
-
-
-def _default_pack_dir() -> Path:
-    configured = os.environ.get("MINECRAFT_PACK_DIR", "").strip()
-    if configured:
-        return Path(configured)
-    return Path.cwd() / "pack"
+from .settings import add_pack_dir_option, add_validation_options
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -21,27 +13,28 @@ def main(argv: list[str] | None = None) -> int:
         description="Manage a packwiz Fabric pack with flock locking, staging, and validation.",
         add_help=False,
     )
-    parser.add_argument(
-        "--pack-dir",
-        type=Path,
-        default=None,
-        help="Path to the pack directory containing pack.toml (default: $MINECRAFT_PACK_DIR or ./pack)",
-    )
+    add_pack_dir_option(parser)
     parser.add_argument(
         "--kind",
         default="mod",
         help="Pack kind label (default: mod)",
     )
+    add_validation_options(parser)
     parser.add_argument("-h", "--help", action="store_true")
     known, rest = parser.parse_known_args(argv)
     if known.help:
         parser.print_help()
-        print("\nOperations: list, validate, install <project> [version], update [project], remove <project>, pin <project>, unpin <project>, side <project> <client|both|server>, export")
+        print(
+            "\nOperations: list, validate, install <project-id-or-slug> [version-id], update [mod-name], remove <mod-name>, pin <mod-name>, unpin <mod-name>, side <mod-name> <client|both|server>, export"
+        )
         return 0
-    pack_dir = (
-        known.pack_dir if known.pack_dir is not None else _default_pack_dir()
-    ).expanduser()
-    return manager_main(pack_dir, str(known.kind), rest)
+    return manager_main(
+        known.pack_dir,
+        str(known.kind),
+        rest,
+        java_version=known.java_version,
+        policy=known.policy,
+    )
 
 
 if __name__ == "__main__":

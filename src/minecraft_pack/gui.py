@@ -9,6 +9,8 @@ from pathlib import Path
 
 import gi
 
+from .settings import add_pack_dir_option, add_validation_options
+
 gi.require_version("Gtk", "4.0")
 from gi.repository import Gio, GLib, Gtk
 
@@ -29,10 +31,24 @@ def resolve_cli_command(command_dir: str | Path | None) -> str:
 
 
 class ManagerWindow(Gtk.ApplicationWindow):
-    def __init__(self, app, pack_dir, command_dir=None, autoload=True):
+    def __init__(
+        self,
+        app,
+        pack_dir,
+        command_dir=None,
+        autoload=True,
+        *,
+        java_version=None,
+        policy=None,
+    ):
         super().__init__(application=app, title="Minecraft パック管理")
         self.set_default_size(1060, 760)
         self.command_dir = Path(command_dir) if command_dir is not None else None
+        self.validation_args = []
+        if java_version is not None:
+            self.validation_args.extend(["--java-version", java_version])
+        if policy is not None:
+            self.validation_args.extend(["--policy", str(policy)])
         self.busy = False
         self.loaded = False
         self.selected = None
@@ -62,7 +78,12 @@ class ManagerWindow(Gtk.ApplicationWindow):
         self.pack_dir.set_placeholder_text("pack.toml を含む pack ディレクトリのパス")
         source.append(self.pack_dir)
         self.reload_button = self.button(source, "一覧を読込", lambda: self.refresh())
-        self.policy = Gtk.Label(xalign=0, wrap=True)
+        java_hint = (
+            f"対象 Java: {java_version}"
+            if java_version
+            else "検証・編集には --java-version または MINECRAFT_JAVA_VERSION で対象 Java を指定してください。"
+        )
+        self.policy = Gtk.Label(label=java_hint, xalign=0, wrap=True)
         root.append(self.policy)
         self.summary = Gtk.Label(xalign=0, wrap=True, selectable=True)
         root.append(self.summary)
@@ -141,9 +162,6 @@ class ManagerWindow(Gtk.ApplicationWindow):
 
     def set_busy(self, busy):
         self.busy = busy
-        self.policy.set_text(
-            "クライアント・サーバー・両方の導入先（side）と Fabric 依存関係を検証しながら編集します。"
-        )
         self.side.set_visible(True)
         self.side_button.set_visible(True)
         self.controls.set_sensitive(not busy)
@@ -269,6 +287,7 @@ class ManagerWindow(Gtk.ApplicationWindow):
             resolve_cli_command(self.command_dir),
             "--pack-dir",
             self.pack_dir.get_text(),
+            *self.validation_args,
             operation,
             *args,
         ]
@@ -321,17 +340,18 @@ def main(argv=None):
         prog="minecraft-pack-manager",
         description="GTK4 front-end for minecraft-pack.",
     )
-    parser.add_argument(
-        "--pack-dir",
-        default=os.environ.get("MINECRAFT_PACK_DIR", str(Path.cwd() / "pack")),
-        help="Path to the pack directory containing pack.toml",
-    )
+    add_pack_dir_option(parser)
+    add_validation_options(parser)
     args = parser.parse_args(argv)
     app = Gtk.Application(application_id=APP_ID, flags=Gio.ApplicationFlags.NON_UNIQUE)
     app.connect(
         "activate",
         lambda application: ManagerWindow(
-            application, args.pack_dir, os.environ.get("MINECRAFT_PACK_BIN")
+            application,
+            args.pack_dir,
+            os.environ.get("MINECRAFT_PACK_BIN"),
+            java_version=args.java_version,
+            policy=args.policy,
         ).present(),
     )
     return app.run([])

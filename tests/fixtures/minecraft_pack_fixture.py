@@ -14,7 +14,10 @@ import tomli_w
 
 from minecraft_pack import json_guard as repo_json
 from minecraft_pack.fabric_deps import FabricMod
+from minecraft_pack.settings import ValidationSettings
 from minecraft_pack.versions import Version
+
+TEST_SETTINGS = ValidationSettings(java_version="25")
 
 
 def modded_pack_dir() -> Path:

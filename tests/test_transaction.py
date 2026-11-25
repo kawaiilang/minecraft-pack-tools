@@ -10,6 +10,7 @@ from dataclasses import replace
 from pathlib import Path
 
 from minecraft_pack_fixture import (
+    TEST_SETTINGS,
     PackTestCase,
     fabric_mod,
     fixture,
@@ -23,6 +24,7 @@ from minecraft_pack_fixture import (
 from minecraft_pack import json_guard as repo_json
 from minecraft_pack.data import Metadata, list_pack
 from minecraft_pack.fabric_deps import FabricMod
+from minecraft_pack.settings import ValidationSettings
 from minecraft_pack.transaction import transact, tree_snapshot
 from minecraft_pack.validate import validate_pack
 from minecraft_pack.versions import Snapshot, Version, check_versions
@@ -32,24 +34,149 @@ class PackTransactionTests(PackTestCase):
     def test_optional_external_pack_validates_offline(self) -> None:
         if not os.environ.get("MINECRAFT_PACK_MODDED"):
             self.skipTest("MINECRAFT_PACK_MODDED is not set")
-        validate_pack(modded_pack_dir(), "mod")
+        validate_pack(modded_pack_dir(), "mod", settings=TEST_SETTINGS)
 
     def test_synthetic_sides_empty_pack_and_independent_versions(self) -> None:
-        validate_pack(self.root, "mod")
+        validate_pack(self.root, "mod", settings=TEST_SETTINGS)
         with self.assertRaises(ValueError):
-            validate_pack(self.root, "unknown")
+            validate_pack(self.root, "../invalid", settings=TEST_SETTINGS)
         other = self.work / "independent"
         fixture(other, release="v2")
         before = tree_snapshot(other)
         transact(
-            self.root, [], runner, self.fetch, "mod", fabric_fetcher=self.fetch_fabric
+            self.root,
+            [],
+            runner,
+            self.fetch,
+            "mod",
+            fabric_fetcher=self.fetch_fabric,
+            settings=TEST_SETTINGS,
         )
         self.assertEqual(tree_snapshot(other), before)
         self.assertNotEqual(list_pack(self.root), list_pack(other))
         empty = self.work / "empty"
         fixture(empty, ())
-        validate_pack(empty, "mod")
+        validate_pack(empty, "mod", settings=TEST_SETTINGS)
         self.assertEqual(list_pack(empty)["entries"], [])
+
+    def test_java_constraint_rejects_update_before_exchange(self) -> None:
+        path = self.root / "modrinth-lock.json"
+        snapshot = Snapshot.parse(repo_json.load(path))
+        digest, mod = next(iter(snapshot.fabric.items()))
+        path.write_text(
+            replace(
+                snapshot,
+                fabric={
+                    **snapshot.fabric,
+                    digest: replace(mod, depends={"java": [">=25"]}),
+                },
+            ).json()
+        )
+        before = tree_snapshot(self.root)
+        with self.assertRaisesRegex(ValueError, "requires 'java'"):
+            transact(
+                self.root,
+                ["update", "--all"],
+                runner,
+                self.fetch,
+                fabric_fetcher=self.fetch_fabric,
+                settings=ValidationSettings("21"),
+            )
+        self.assertEqual(tree_snapshot(self.root), before)
+        transact(
+            self.root,
+            ["update", "--all"],
+            runner,
+            self.fetch,
+            fabric_fetcher=self.fetch_fabric,
+            settings=ValidationSettings("25"),
+        )
+
+    def test_version_triggered_policy_offline_and_before_publication(self) -> None:
+        policy = self.work / "policy.json"
+        policy.write_text(
+            json.dumps(
+                {
+                    "conditional_pins": [
+                        {
+                            "when_any_version_ids": ["v1client"],
+                            "require_pinned_project_id": "server",
+                            "reason": "compatibility hold",
+                        }
+                    ]
+                }
+            )
+        )
+        settings = ValidationSettings.from_options("25", policy)
+        validate_pack(self.root, settings=TEST_SETTINGS)
+        with self.assertRaisesRegex(
+            ValueError, "pinned project server: compatibility hold"
+        ):
+            validate_pack(self.root, settings=settings)
+        other = self.work / "later-release"
+        fixture(other, release="v2")
+        validate_pack(other, settings=settings)
+
+        entry = Path("mods/server.pw.toml")
+
+        def set_pin(root: Path, pinned: bool) -> None:
+            write_toml(root / entry, {**read_toml(root / entry), "pin": pinned})
+
+        set_pin(self.root, True)
+        refresh(self.root)
+        validate_pack(self.root, settings=settings)
+        before = tree_snapshot(self.root)
+        commands: list[list[str]] = []
+
+        def unpin(stage: Path, config: Path, arguments: list[str]) -> None:
+            commands.append(arguments)
+            if arguments == ["unpin", "server"]:
+                set_pin(stage, False)
+            else:
+                runner(stage, config, arguments)
+
+        with self.assertRaisesRegex(ValueError, "pinned project server"):
+            transact(
+                self.root,
+                ["unpin", "server"],
+                unpin,
+                self.fetch,
+                fabric_fetcher=self.fetch_fabric,
+                settings=settings,
+            )
+        self.assertEqual(commands, [["unpin", "server"], ["refresh"]])
+        self.assertEqual(tree_snapshot(self.root), before)
+
+    def test_policy_rejects_malformed_rules(self) -> None:
+        policy = self.work / "policy.json"
+        rule = {
+            "when_any_version_ids": ["v1client"],
+            "require_pinned_project_id": "server",
+        }
+        for raw in (
+            "{",
+            "[]",
+            "{}",
+            '{"conditional_pins": {}, "extra": 0}',
+            *(
+                json.dumps({"conditional_pins": [bad]})
+                for bad in (
+                    {},
+                    {**rule, "extra": 0},
+                    {**rule, "reason": None},
+                    {**rule, "when_any_version_ids": "v1client"},
+                    {**rule, "when_any_version_ids": []},
+                    {**rule, "when_any_version_ids": [""]},
+                    {**rule, "require_pinned_project_id": " "},
+                )
+            ),
+        ):
+            with (
+                self.subTest(raw=raw),
+                self.assertRaisesRegex(ValueError, "Invalid policy"),
+            ):
+                policy.write_text(raw)
+                ValidationSettings.from_options("25", policy)
 
     def test_invalid_supported_versions_and_provenance(self) -> None:
         original = repo_json.record(repo_json.load(self.root / "modrinth-lock.json"))
@@ -113,7 +240,12 @@ class PackTransactionTests(PackTestCase):
 
             with self.assertRaisesRegex(ValueError, error):
                 transact(
-                    self.root, [], record, self.fetch, fabric_fetcher=self.fetch_fabric
+                    self.root,
+                    [],
+                    record,
+                    self.fetch,
+                    fabric_fetcher=self.fetch_fabric,
+                    settings=TEST_SETTINGS,
                 )
             self.assertEqual(calls, [["refresh"]])
             self.assertEqual(tree_snapshot(self.root), before)
@@ -134,7 +266,7 @@ class PackTransactionTests(PackTestCase):
                 raw["schema"] = 2
             path.write_text(json.dumps(raw))
             with self.assertRaises(ValueError):
-                validate_pack(self.root)
+                validate_pack(self.root, settings=TEST_SETTINGS)
 
             expected_cached: set[str] = (
                 set() if mode == "old schema" else set(by_hash) - {bad}
@@ -155,23 +287,24 @@ class PackTransactionTests(PackTestCase):
                 self.fetch,
                 fabric_fetcher=repair,
                 loader_fetcher=lambda version: fabric_mod("fabricloader", version),
+                settings=TEST_SETTINGS,
             )
-            validate_pack(self.root)
+            validate_pack(self.root, settings=TEST_SETTINGS)
 
     def test_source_and_archive_integrity(self) -> None:
         path = self.root / "mods/client.pw.toml"
         path.write_text(path.read_text().replace('name = "client"', 'name = "changed"'))
         with self.assertRaises(ValueError):
-            validate_pack(self.root, "mod")
+            validate_pack(self.root, "mod", settings=TEST_SETTINGS)
         refresh(self.root)
-        validate_pack(self.root, "mod")
+        validate_pack(self.root, "mod", settings=TEST_SETTINGS)
         (self.root / "runtime.json").write_text("{}")
         with self.assertRaises(ValueError):
-            validate_pack(self.root, "mod")
+            validate_pack(self.root, "mod", settings=TEST_SETTINGS)
         (self.root / "runtime.json").unlink()
         (self.root / "unsafe").symlink_to(path)
         with self.assertRaises(ValueError):
-            validate_pack(self.root, "mod")
+            validate_pack(self.root, "mod", settings=TEST_SETTINGS)
 
     def test_side_update_requires_matching_export(self) -> None:
         before = tree_snapshot(self.root)
@@ -187,6 +320,7 @@ class PackTransactionTests(PackTestCase):
                 self.fetch,
                 "mod",
                 fabric_fetcher=self.fetch_fabric,
+                settings=TEST_SETTINGS,
             )
         self.assertEqual(tree_snapshot(self.root), before)
         transact(
@@ -196,9 +330,10 @@ class PackTransactionTests(PackTestCase):
             self.fetch,
             "mod",
             fabric_fetcher=self.fetch_fabric,
+            settings=TEST_SETTINGS,
         )
         self.assertEqual(read_toml(self.root / "mods/client.pw.toml")["side"], "server")
-        validate_pack(self.root, "mod")
+        validate_pack(self.root, "mod", settings=TEST_SETTINGS)
 
     def test_reinstall_changes_version_and_preserves_existing_side_and_pin(
         self,
@@ -226,12 +361,13 @@ class PackTransactionTests(PackTestCase):
             self.fetch,
             "mod",
             fabric_fetcher=self.fetch_fabric,
+            settings=TEST_SETTINGS,
         )
         self.assertEqual(read_toml(path)["pin"], True)
         self.assertEqual(read_toml(path)["side"], "client")
         selected = Metadata("mods/client.pw.toml", read_toml(path))
         self.assertEqual(selected.version, self.versions[0].id)
-        validate_pack(self.root, "mod")
+        validate_pack(self.root, "mod", settings=TEST_SETTINGS)
 
     def test_failures_preserve_original_and_external_edits(self) -> None:
         before = tree_snapshot(self.root)
@@ -247,10 +383,24 @@ class PackTransactionTests(PackTestCase):
             raise RuntimeError("partial packwiz failure")
 
         with self.assertRaises(ValueError):
-            transact(self.root, ["update", "--all"], runner, incompatible, "mod")
+            transact(
+                self.root,
+                ["update", "--all"],
+                runner,
+                incompatible,
+                "mod",
+                settings=TEST_SETTINGS,
+            )
         self.assertEqual(tree_snapshot(self.root), before)
         with self.assertRaises(RuntimeError):
-            transact(self.root, ["update", "--all"], broken, self.fetch, "mod")
+            transact(
+                self.root,
+                ["update", "--all"],
+                broken,
+                self.fetch,
+                "mod",
+                settings=TEST_SETTINGS,
+            )
         self.assertEqual(tree_snapshot(self.root), before)
 
         def concurrent(ids: list[str]) -> list[Version]:
@@ -265,6 +415,7 @@ class PackTransactionTests(PackTestCase):
                 concurrent,
                 "mod",
                 fabric_fetcher=self.fetch_fabric,
+                settings=TEST_SETTINGS,
             )
         self.assertEqual((self.root / "external.txt").read_text(), "keep this edit")
         (self.root / "external.txt").unlink()
@@ -324,7 +475,12 @@ class PackTransactionTests(PackTestCase):
 
         with self.assertRaisesRegex(ValueError, "added-dependency.*support Minecraft"):
             transact(
-                self.root, ["modrinth", "install", "example"], install, fetch, "mod"
+                self.root,
+                ["modrinth", "install", "example"],
+                install,
+                fetch,
+                "mod",
+                settings=TEST_SETTINGS,
             )
         self.assertEqual(tree_snapshot(self.root), before)
         self.assertNotIn(["modrinth", "export", "-o", "client.mrpack"], commands)
@@ -336,7 +492,7 @@ class PackTransactionTests(PackTestCase):
             raise OSError("offline")
 
         with self.assertRaises(OSError):
-            transact(self.root, [], runner, unavailable, "mod")
+            transact(self.root, [], runner, unavailable, "mod", settings=TEST_SETTINGS)
         self.assertEqual(tree_snapshot(self.root), before)
         failed = self.work / "failed-exchange"
         failed.write_text("#!" + sys.executable + "\nraise SystemExit(12)\n")
@@ -350,6 +506,7 @@ class PackTransactionTests(PackTestCase):
                 "mod",
                 exchange=str(failed),
                 fabric_fetcher=self.fetch_fabric,
+                settings=TEST_SETTINGS,
             )
         self.assertEqual(tree_snapshot(self.root), before)
         self.assertFalse(list(self.work.glob(".minecraft-pack-work.*")))
@@ -425,7 +582,7 @@ class PackTransactionTests(PackTestCase):
                 )
         (self.root / "modrinth-lock.json").unlink()
         with self.assertRaises(FileNotFoundError):
-            validate_pack(self.root, "mod")
+            validate_pack(self.root, "mod", settings=TEST_SETTINGS)
 
     def test_invalid_archive_and_metadata_path_never_publish(self) -> None:
         before = tree_snapshot(self.root)
@@ -443,6 +600,7 @@ class PackTransactionTests(PackTestCase):
                 self.fetch,
                 "mod",
                 fabric_fetcher=self.fetch_fabric,
+                settings=TEST_SETTINGS,
             )
         self.assertEqual(tree_snapshot(self.root), before)
         for invalid in [
@@ -458,7 +616,7 @@ class PackTransactionTests(PackTestCase):
             index["files"] = entries
             write_toml(self.root / "index.toml", index)
             with self.subTest(path=invalid), self.assertRaises(ValueError):
-                validate_pack(self.root, "mod")
+                validate_pack(self.root, "mod", settings=TEST_SETTINGS)
 
 
 if __name__ == "__main__":

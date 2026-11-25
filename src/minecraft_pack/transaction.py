@@ -16,6 +16,7 @@ import tomli_w
 from . import json_guard as json
 from .data import child, entries, mod_specs, read_toml, require, sha256
 from .fabric_deps import FabricMod, fetch_fabric_metadata, fetch_loader
+from .settings import ValidationSettings
 from .validate import validate_archive, validate_source
 from .versions import (
     LOCK_SCHEMA,
@@ -135,6 +136,8 @@ def transact(
     exchange: str = "mv",
     fabric_fetcher: FabricFetcher = fetch_fabric_metadata,
     loader_fetcher: Callable[[str], FabricMod] = fetch_loader,
+    *,
+    settings: ValidationSettings,
 ) -> None:
     root = Path(os.path.abspath(root))
     before = tree_snapshot(root)
@@ -199,7 +202,7 @@ def transact(
             fabric_fetcher(artifacts, cached),
         )
         (candidate / "modrinth-lock.json").write_text(snapshot.json(), encoding="utf-8")
-        checked = validate_source(candidate, kind)
+        checked = validate_source(candidate, kind, settings)
         source = [
             entry for entry in tree_snapshot(candidate) if entry.path != "client.mrpack"
         ]
@@ -282,6 +285,8 @@ def run_packwiz(stage: Path, config: Path, arguments: list[str]) -> None:
     )
 
 
-def mutate(root: Path, command: list[str], kind: str) -> None:
-    transact(root, command, run_packwiz, fetch_versions, kind)
+def mutate(
+    root: Path, command: list[str], kind: str, settings: ValidationSettings
+) -> None:
+    transact(root, command, run_packwiz, fetch_versions, kind, settings=settings)
     print("Validated and published pack source, Modrinth snapshot and client.mrpack")

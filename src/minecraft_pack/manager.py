@@ -11,6 +11,7 @@ from pathlib import Path
 
 from . import json_guard
 from .data import list_pack, require
+from .settings import ValidationSettings, validate_kind
 from .transaction import mutate, packwiz_arguments
 from .validate import validate_pack
 
@@ -22,8 +23,10 @@ def manage(
     project: str | None,
     version: str | None,
     machine: bool,
+    java_version: str | None = None,
+    policy: Path | None = None,
 ) -> None:
-    require(kind == "mod", "Unknown pack")
+    validate_kind(kind)
     root = Path(os.path.abspath(root))
     actual_root = root.resolve()
     cwd = Path.cwd()
@@ -42,7 +45,9 @@ def manage(
         require(not machine, "--json is only supported for list and validate")
         command = packwiz_arguments(operation, project, version)
     descriptor = os.open(
-        root.parent / ".minecraft-pack.lock", os.O_RDWR | os.O_CREAT, 0o600
+        actual_root.parent / f".{actual_root.name}.minecraft-pack.lock",
+        os.O_RDWR | os.O_CREAT,
+        0o600,
     )
     try:
         fcntl.flock(
@@ -63,20 +68,29 @@ def manage(
                         f"[{entry['side']}] {entry['version']}"
                         + (" (pinned)" if entry["pinned"] else "")
                     )
-        elif operation == "validate":
-            validate_pack(root, kind)
+            return
+        settings = ValidationSettings.from_options(java_version, policy)
+        if operation == "validate":
+            validate_pack(root, kind, settings=settings)
             print(
                 json.dumps({"valid": True, "pack": kind}, separators=(",", ":"))
                 if machine
                 else "Pack source, hashes, exact Minecraft/Fabric compatibility and export are valid."
             )
         else:
-            mutate(root, command, kind)
+            mutate(root, command, kind, settings)
     finally:
         os.close(descriptor)
 
 
-def main(root: Path, kind: str, arguments: list[str] | None = None) -> int:
+def main(
+    root: Path,
+    kind: str,
+    arguments: list[str] | None = None,
+    *,
+    java_version: str | None = None,
+    policy: Path | None = None,
+) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("operation", nargs="?", default="list")
     parser.add_argument("project", nargs="?")
@@ -91,6 +105,8 @@ def main(root: Path, kind: str, arguments: list[str] | None = None) -> int:
             None if args.project is None else str(args.project),
             None if args.version is None else str(args.version),
             bool(args.json),
+            java_version,
+            policy,
         )
     except (
         OSError,
