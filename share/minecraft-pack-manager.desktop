@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Minecraft Pack Manager
+Name[ja]=Minecraft パック管理
+Comment=Manage packwiz Fabric packs with transaction guards and validation
+Comment[ja]=packwiz Fabric パックを検証付きで管理します
+Exec=minecraft-pack-manager
+Icon=applications-games
+Terminal=false
+Categories=Game;Utility;
+StartupWMClass=io.github.kawaiilang.MinecraftPackManager

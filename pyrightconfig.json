@@ -1,0 +1,23 @@
+{
+  "include": [
+    "src/minecraft_pack/__init__.py",
+    "src/minecraft_pack/json_guard.py",
+    "src/minecraft_pack/data.py",
+    "src/minecraft_pack/fabric_version.py",
+    "src/minecraft_pack/fabric_deps.py",
+    "src/minecraft_pack/versions.py",
+    "src/minecraft_pack/validate.py",
+    "src/minecraft_pack/transaction.py",
+    "src/minecraft_pack/manager.py",
+    "src/minecraft_pack/cli.py",
+    "src/minecraft_pack/validate_cli.py",
+    "tests/fixtures/minecraft_pack_fixture.py",
+    "tests/test_cli.py",
+    "tests/test_fabric.py",
+    "tests/test_transaction.py"
+  ],
+  "extraPaths": ["src", "tests/fixtures"],
+  "typeCheckingMode": "strict",
+  "pythonVersion": "3.12",
+  "reportMissingImports": "error"
+}
