@@ -51,6 +51,8 @@ Pass `--policy ./policy.json` or set `MINECRAFT_PACK_POLICY` to require specific
 minecraft-pack-manager --pack-dir ./pack --java-version 21
 ```
 
+The GUI supports English (`en`) and Japanese (`ja`) via JSON catalogs in `src/minecraft_pack/locales/`. It detects the language from the system locale (`LC_ALL`, `LANGUAGE`, `LC_MESSAGES`, `LANG`) with English fallback, or can be overridden explicitly with `--lang en` / `--lang ja`.
+
 ### Nix Flake
 
 ```nix

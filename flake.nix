@@ -235,7 +235,7 @@
               ''
                 export PYTHONDONTWRITEBYTECODE=1
                 export PYTHONPATH="${./src}:${./tests}:${./tests/fixtures}"
-                python3 -m unittest -v test_cli test_fabric test_transaction
+                python3 -m unittest -v test_cli test_i18n test_fabric test_transaction
                 touch "$out"
               '';
 

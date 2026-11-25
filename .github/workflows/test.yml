@@ -28,7 +28,7 @@ jobs:
           .venv/bin/minecraft-pack --help >/dev/null
           .venv/bin/minecraft-pack-validate --help >/dev/null
           export PYTHONPATH="$PWD/src:$PWD/tests:$PWD/tests/fixtures"
-          .venv/bin/python -m unittest -v test_cli test_fabric test_transaction
+          .venv/bin/python -m unittest -v test_cli test_i18n test_fabric test_transaction
           xvfb-run -a .venv/bin/python tests/test_gui.py
 
   nix-checks:

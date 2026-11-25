@@ -2,6 +2,7 @@
   "include": [
     "src/minecraft_pack/__init__.py",
     "src/minecraft_pack/json_guard.py",
+    "src/minecraft_pack/i18n.py",
     "src/minecraft_pack/data.py",
     "src/minecraft_pack/settings.py",
     "src/minecraft_pack/fabric_version.py",
@@ -14,6 +15,7 @@
     "src/minecraft_pack/validate_cli.py",
     "tests/fixtures/minecraft_pack_fixture.py",
     "tests/test_cli.py",
+    "tests/test_i18n.py",
     "tests/test_fabric.py",
     "tests/test_transaction.py"
   ],

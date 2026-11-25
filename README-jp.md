@@ -51,6 +51,8 @@ minecraft-pack --pack-dir ./pack remove sodium
 minecraft-pack-manager --pack-dir ./pack --java-version 21
 ```
 
+GUI は英語（`en`）・日本語（`ja`）に対応しており、`src/minecraft_pack/locales/` の JSON カタログから読み込みます。システムロケール（`LC_ALL` / `LANGUAGE` / `LC_MESSAGES` / `LANG`、未対応時は英語にフォールバック）を自動検出し、`--lang en` / `--lang ja` で明示指定もできます。
+
 ### Nix Flake
 
 ```nix

@@ -1,11 +1,13 @@
 """Exercise actual GTK callbacks and async Gio subprocesses with a local fake CLI."""
 
 import json
+import os
 import sys
 import tempfile
 import time
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from minecraft_pack import gui as ui
 
@@ -50,7 +52,7 @@ else:
         executable.write_text(fake)
         executable.chmod(0o755)
         self.window = ui.ManagerWindow(
-            self.app, self.root / "pack with spaces", self.root
+            self.app, self.root / "pack with spaces", self.root, lang="en"
         )
         self.wait_idle()
 
@@ -71,6 +73,7 @@ else:
         return [json.loads(line) for line in self.calls.read_text().splitlines()]
 
     def test_routing_and_callbacks(self):
+        self.assertEqual(self.window.get_title(), "Minecraft Pack Manager")
         self.assertIn("--java-version", self.window.policy.get_text())
         self.assertEqual(len(self.window.rows), 1)
         self.window.listbox.select_row(self.window.listbox.get_row_at_index(0))
@@ -114,7 +117,7 @@ else:
         self.wait_idle()
         self.window.run("validate")
         self.wait_idle()
-        self.assertEqual(self.window.status.get_text(), "検証に成功しました。")
+        self.assertEqual(self.window.status.get_text(), "Validation succeeded.")
         self.window.listbox.select_row(self.window.listbox.get_row_at_index(0))
         self.window.confirm = lambda _text, callback: callback()
         self.window.remove()
@@ -125,10 +128,10 @@ else:
         self.window.destroy()
         policy = self.root / "release policy.json"
         self.window = ui.ManagerWindow(
-            self.app, self.root, self.root, java_version="21", policy=policy
+            self.app, self.root, self.root, java_version="21", policy=policy, lang="en"
         )
         self.wait_idle()
-        self.assertIn("Java: 21", self.window.policy.get_text())
+        self.assertEqual(self.window.policy.get_text(), "Target Java: 21")
         self.window.run("validate")
         self.wait_idle()
         self.assertEqual(
@@ -145,11 +148,34 @@ else:
             ],
         )
 
+    def test_japanese_locale_rendering_and_env_detection(self):
+        self.window.destroy()
+        with mock.patch.dict(
+            os.environ,
+            {"LANG": "ja_JP.UTF-8"},
+            clear=False,
+        ):
+            os.environ.pop("LC_ALL", None)
+            os.environ.pop("LANGUAGE", None)
+            os.environ.pop("LC_MESSAGES", None)
+            self.window = ui.ManagerWindow(
+                self.app, self.root, self.root, java_version="25"
+            )
+            self.wait_idle()
+            self.assertEqual(self.window.i18n.locale, "ja")
+            self.assertEqual(self.window.get_title(), "Minecraft パック管理")
+            self.assertEqual(self.window.policy.get_text(), "対象 Java: 25")
+            self.window.run("validate")
+            self.wait_idle()
+            self.assertEqual(self.window.status.get_text(), "検証に成功しました。")
+
     def test_failure_and_pack_dir_change(self):
         self.window.project.set_text("broken")
         self.window.install()
         self.wait_idle()
-        self.assertIn("失敗", self.window.status.get_text())
+        self.assertEqual(
+            self.window.status.get_text(), "Operation failed. See the details below."
+        )
         buffer = self.window.log.get_buffer()
         self.assertIn(
             "original retained",

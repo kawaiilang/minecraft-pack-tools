@@ -9,6 +9,7 @@ from pathlib import Path
 
 import gi
 
+from .i18n import SUPPORTED_LOCALES, load_translator
 from .settings import add_pack_dir_option, add_validation_options
 
 gi.require_version("Gtk", "4.0")
@@ -16,7 +17,6 @@ from gi.repository import Gio, GLib, Gtk
 
 APP_ID = "io.github.kawaiilang.MinecraftPackManager"
 SIDES = ("client", "both", "server")
-SIDE_LABELS = {"client": "クライアント", "both": "両方", "server": "サーバー"}
 
 
 def resolve_cli_command(command_dir: str | Path | None) -> str:
@@ -40,8 +40,10 @@ class ManagerWindow(Gtk.ApplicationWindow):
         *,
         java_version=None,
         policy=None,
+        lang=None,
     ):
-        super().__init__(application=app, title="Minecraft パック管理")
+        self.i18n = load_translator(explicit=lang)
+        super().__init__(application=app, title=self.i18n.tr("window.title"))
         self.set_default_size(1060, 760)
         self.command_dir = Path(command_dir) if command_dir is not None else None
         self.validation_args = []
@@ -59,12 +61,12 @@ class ManagerWindow(Gtk.ApplicationWindow):
         for edge in ("top", "bottom", "start", "end"):
             getattr(root, "set_margin_" + edge)(18)
         self.set_child(root)
-        title = Gtk.Label(label="Minecraft パック管理", xalign=0)
+        title = Gtk.Label(label=self.i18n.tr("window.title"), xalign=0)
         title.add_css_class("title-1")
         root.append(title)
         root.append(
             Gtk.Label(
-                label="packwiz Fabric パックを検証・ステージング保護付きで編集します。",
+                label=self.i18n.tr("window.subtitle"),
                 xalign=0,
                 wrap=True,
             )
@@ -73,15 +75,17 @@ class ManagerWindow(Gtk.ApplicationWindow):
         root.append(self.controls)
         source = Gtk.Box(spacing=8)
         self.controls.append(source)
-        source.append(Gtk.Label(label="Pack ディレクトリ"))
+        source.append(Gtk.Label(label=self.i18n.tr("source.label")))
         self.pack_dir = Gtk.Entry(text=str(pack_dir), hexpand=True)
-        self.pack_dir.set_placeholder_text("pack.toml を含む pack ディレクトリのパス")
+        self.pack_dir.set_placeholder_text(self.i18n.tr("source.placeholder"))
         source.append(self.pack_dir)
-        self.reload_button = self.button(source, "一覧を読込", lambda: self.refresh())
+        self.reload_button = self.button(
+            source, self.i18n.tr("button.reload"), lambda: self.refresh()
+        )
         java_hint = (
-            f"対象 Java: {java_version}"
+            self.i18n.tr("java.target", version=java_version)
             if java_version
-            else "検証・編集には --java-version または MINECRAFT_JAVA_VERSION で対象 Java を指定してください。"
+            else self.i18n.tr("java.missing_hint")
         )
         self.policy = Gtk.Label(label=java_hint, xalign=0, wrap=True)
         root.append(self.policy)
@@ -100,29 +104,43 @@ class ManagerWindow(Gtk.ApplicationWindow):
         install = Gtk.Box(spacing=8)
         self.actions.append(install)
         self.project = Gtk.Entry(
-            placeholder_text="ModrinthのプロジェクトID / slug", hexpand=True
+            placeholder_text=self.i18n.tr("input.project_placeholder"), hexpand=True
         )
-        self.version = Gtk.Entry(placeholder_text="バージョンID（任意）", hexpand=True)
+        self.version = Gtk.Entry(
+            placeholder_text=self.i18n.tr("input.version_placeholder"), hexpand=True
+        )
         install.append(self.project)
         install.append(self.version)
-        self.install_button = self.button(install, "インストール", self.install)
+        self.install_button = self.button(
+            install, self.i18n.tr("button.install"), self.install
+        )
         self.install_button.add_css_class("suggested-action")
         commands = Gtk.Box(spacing=8)
         self.actions.append(commands)
         self.update_button = self.button(
-            commands, "選択項目を更新", lambda: self.run_selected("update")
+            commands,
+            self.i18n.tr("button.update_selected"),
+            lambda: self.run_selected("update"),
         )
-        self.update_all_button = self.button(commands, "全件更新", self.update_all)
-        self.remove_button = self.button(commands, "削除", self.remove)
+        self.update_all_button = self.button(
+            commands, self.i18n.tr("button.update_all"), self.update_all
+        )
+        self.remove_button = self.button(
+            commands, self.i18n.tr("button.remove"), self.remove
+        )
         self.remove_button.add_css_class("destructive-action")
         self.validate_button = self.button(
-            commands, "検証", lambda: self.run("validate")
+            commands, self.i18n.tr("button.validate"), lambda: self.run("validate")
         )
-        self.side = Gtk.DropDown.new_from_strings([SIDE_LABELS[s] for s in SIDES])
+        self.side = Gtk.DropDown.new_from_strings(
+            [self.i18n.side_label(side) for side in SIDES]
+        )
         commands.append(self.side)
-        self.side_button = self.button(commands, "導入先を変更", self.change_side)
+        self.side_button = self.button(
+            commands, self.i18n.tr("button.change_side"), self.change_side
+        )
         self.status = Gtk.Label(
-            label="packディレクトリを指定して一覧を読み込んでください。", xalign=0, wrap=True
+            label=self.i18n.tr("status.initial"), xalign=0, wrap=True
         )
         root.append(self.status)
         self.spinner = Gtk.Spinner(halign=Gtk.Align.START)
@@ -151,7 +169,7 @@ class ManagerWindow(Gtk.ApplicationWindow):
     def source_changed(self, *_):
         self.loaded = False
         self.clear_rows()
-        self.summary.set_text("編集先が変わりました。一覧を読み込んでください。")
+        self.summary.set_text(self.i18n.tr("summary.changed"))
         self.set_busy(False)
 
     def clear_rows(self):
@@ -178,7 +196,7 @@ class ManagerWindow(Gtk.ApplicationWindow):
 
     def on_close(self, *_):
         if self.busy:
-            self.status.set_text("処理中です。完了してから閉じてください。")
+            self.status.set_text(self.i18n.tr("status.busy_close"))
         return self.busy
 
     def on_select(self, _box, row):
@@ -198,14 +216,10 @@ class ManagerWindow(Gtk.ApplicationWindow):
         project = self.project.get_text().strip()
         version = self.version.get_text().strip()
         if not re.fullmatch(r"[A-Za-z0-9_][A-Za-z0-9_-]*", project):
-            self.status.set_text(
-                "ModrinthのプロジェクトIDまたはslugを入力してください（URLは使えません）。"
-            )
+            self.status.set_text(self.i18n.tr("status.invalid_project"))
             return
         if version and not re.fullmatch(r"[A-Za-z0-9]+", version):
-            self.status.set_text(
-                "バージョン番号ではなくModrinthのバージョンIDを入力してください。"
-            )
+            self.status.set_text(self.i18n.tr("status.invalid_version"))
             return
         self.run("install", project, *([version] if version else []))
 
@@ -232,7 +246,7 @@ class ManagerWindow(Gtk.ApplicationWindow):
 
     def update_all(self):
         self.confirm(
-            "選択したpackの固定されていない項目をすべて更新しますか？",
+            self.i18n.tr("confirm.update_all"),
             lambda: self.run("update"),
         )
 
@@ -240,7 +254,7 @@ class ManagerWindow(Gtk.ApplicationWindow):
         if self.selected:
             item = self.selected.copy()
             self.confirm(
-                f"{item['name']} をpackから削除しますか？\n依存するModやワールドへの影響を確認してください。",
+                self.i18n.tr("confirm.remove", name=item["name"]),
                 lambda: self.run("remove", item["id"]),
             )
 
@@ -256,13 +270,24 @@ class ManagerWindow(Gtk.ApplicationWindow):
             box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
             for edge in ("top", "bottom", "start", "end"):
                 getattr(box, "set_margin_" + edge)(8)
-            pin = " · 固定" if item["pinned"] else ""
-            destination = SIDE_LABELS[item["side"]]
+            pin = self.i18n.tr("row.pinned_suffix") if item["pinned"] else ""
+            destination = self.i18n.side_label(item["side"])
             box.append(
-                Gtk.Label(label=f"{item['name']}  ·  {destination}{pin}", xalign=0)
+                Gtk.Label(
+                    label=self.i18n.tr(
+                        "row.title", name=item["name"], side=destination, pin=pin
+                    ),
+                    xalign=0,
+                )
             )
             detail = Gtk.Label(
-                label=f"{item['category']} / {item['id']}  ·  {item['version']}  ·  {item['filename']}",
+                label=self.i18n.tr(
+                    "row.detail",
+                    category=item["category"],
+                    id=item["id"],
+                    version=item["version"],
+                    filename=item["filename"],
+                ),
                 xalign=0,
                 wrap=True,
             )
@@ -272,7 +297,13 @@ class ManagerWindow(Gtk.ApplicationWindow):
             self.listbox.append(row)
             self.rows.append(item)
         self.summary.set_text(
-            f"{data['name']}  ·  Minecraft {data['minecraft']} / Fabric {data['fabric']}  ·  登録 {len(self.rows)} 件"
+            self.i18n.tr(
+                "summary.loaded",
+                name=data["name"],
+                minecraft=data["minecraft"],
+                fabric=data["fabric"],
+                count=len(self.rows),
+            )
         )
         self.loaded = True
 
@@ -281,7 +312,9 @@ class ManagerWindow(Gtk.ApplicationWindow):
             return
         self.set_busy(True)
         if not keep_result:
-            self.status.set_text(f"{operation} を実行中…")
+            self.status.set_text(
+                self.i18n.tr("status.running", operation=operation)
+            )
             self.log.get_buffer().set_text("")
         argv = [
             resolve_cli_command(self.command_dir),
@@ -299,7 +332,9 @@ class ManagerWindow(Gtk.ApplicationWindow):
                 None, None, self.finished, (operation, keep_result)
             )
         except GLib.Error as error:
-            self.status.set_text(f"起動できませんでした: {error.message}")
+            self.status.set_text(
+                self.i18n.tr("status.launch_failed", error=error.message)
+            )
             self.set_busy(False)
 
     def finished(self, process, result, context):
@@ -313,22 +348,22 @@ class ManagerWindow(Gtk.ApplicationWindow):
             if operation == "list" and success:
                 self.render(json.loads(stdout))
                 if not keep_result:
-                    self.status.set_text(
-                        "一覧を読み込みました。検証は通信せず、packの整合性と固定した互換性情報を確認します。"
-                    )
+                    self.status.set_text(self.i18n.tr("status.list_loaded"))
             else:
-                self.log.get_buffer().set_text(output or "出力はありません。")
+                self.log.get_buffer().set_text(output or self.i18n.tr("log.empty"))
                 if success:
                     self.status.set_text(
-                        "検証に成功しました。"
-                        if operation == "validate"
-                        else "packを更新しました。差分を確認してからデプロイ／再起動してください。"
+                        self.i18n.tr(
+                            "status.validate_succeeded"
+                            if operation == "validate"
+                            else "status.update_succeeded"
+                        )
                     )
                 else:
-                    self.status.set_text("処理に失敗しました。詳細を確認してください。")
+                    self.status.set_text(self.i18n.tr("status.operation_failed"))
         except (GLib.Error, ValueError, KeyError, TypeError) as error:
             success = False
-            self.status.set_text(f"結果を読み取れませんでした: {error}")
+            self.status.set_text(self.i18n.tr("status.parse_failed", error=error))
         self.process = None
         self.set_busy(False)
         if success and operation not in ("list", "validate"):
@@ -342,6 +377,12 @@ def main(argv=None):
     )
     add_pack_dir_option(parser)
     add_validation_options(parser)
+    parser.add_argument(
+        "--lang",
+        choices=SUPPORTED_LOCALES,
+        default=None,
+        help="UI language override (default: detect from system locale)",
+    )
     args = parser.parse_args(argv)
     app = Gtk.Application(application_id=APP_ID, flags=Gio.ApplicationFlags.NON_UNIQUE)
     app.connect(
@@ -352,6 +393,7 @@ def main(argv=None):
             os.environ.get("MINECRAFT_PACK_BIN"),
             java_version=args.java_version,
             policy=args.policy,
+            lang=args.lang,
         ).present(),
     )
     return app.run([])
