@@ -1,5 +1,6 @@
 """Stage, validate and atomically exchange a pack under the caller's lock."""
 
+import ctypes
 import os
 import re
 import shutil
@@ -217,25 +218,58 @@ def transact(
             tree_snapshot(root) == before,
             "Concurrent source edit; original pack retained",
         )
-        published = subprocess.run(
-            [
-                exchange,
-                "--exchange",
-                "--no-copy",
-                "--no-target-directory",
-                "--",
-                str(candidate),
-                str(root),
-            ],
-            capture_output=True,
-            text=True,
-        )
-        require(
-            published.returncode == 0,
-            f"Atomic publication failed; original pack retained: {published.stderr}",
-        )
+        _atomic_exchange(candidate, root, exchange)
     finally:
         shutil.rmtree(work)
+
+
+def _atomic_exchange(candidate: Path, root: Path, exchange: str) -> None:
+    if exchange == "mv":
+        libc = ctypes.CDLL(None, use_errno=True)
+        renameat2 = getattr(libc, "renameat2", None)
+        if renameat2 is not None:
+            renameat2.argtypes = [
+                ctypes.c_int,
+                ctypes.c_char_p,
+                ctypes.c_int,
+                ctypes.c_char_p,
+                ctypes.c_uint,
+            ]
+            renameat2.restype = ctypes.c_int
+            at_fdcwd = -100
+            rename_exchange = 2
+            result = int(
+                renameat2(
+                    at_fdcwd,
+                    os.fsencode(candidate),
+                    at_fdcwd,
+                    os.fsencode(root),
+                    rename_exchange,
+                )
+            )
+            if result == 0:
+                return
+            err = ctypes.get_errno()
+            raise ValueError(
+                f"Atomic publication failed; original pack retained: {os.strerror(err)}"
+            )
+    published = subprocess.run(
+        [
+            exchange,
+            "--exchange",
+            "--no-copy",
+            "--no-target-directory",
+            "--",
+            str(candidate),
+            str(root),
+        ],
+        capture_output=True,
+        text=True,
+    )
+    require(
+        published.returncode == 0,
+        f"Atomic publication failed; original pack retained: {published.stderr}",
+    )
 
 
 def run_packwiz(stage: Path, config: Path, arguments: list[str]) -> None:
