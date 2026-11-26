@@ -1,18 +1,15 @@
 {
   description = "Guarded CLI, GTK4 GUI, and build-time validator for packwiz Fabric Minecraft packs";
 
-  inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
-  };
+  inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 
   outputs =
     { self, nixpkgs }:
     let
-      systems = [
+      forAllSystems = nixpkgs.lib.genAttrs [
         "x86_64-linux"
         "aarch64-linux"
       ];
-      forAllSystems = nixpkgs.lib.genAttrs systems;
 
       baseSrc =
         lib:
@@ -176,6 +173,36 @@
           ${lib.getExe' cli "minecraft-pack-validate"} ${lib.escapeShellArgs validatorArgs}
           cp "$src" "$out"
         '';
+
+      lintTools =
+        pkgs:
+        let
+          python = pkgs.python3.withPackages (packages: [ packages.tomli-w ]);
+          pythonTools = [
+            python
+            pkgs.ruff
+            pkgs.pyright
+          ];
+          nixTools = [
+            pkgs.nixfmt
+            pkgs.statix
+            pkgs.deadnix
+          ];
+          workflowTools = [
+            pkgs.actionlint
+            pkgs.shellcheck
+            pkgs.zizmor
+          ];
+        in
+        {
+          inherit
+            python
+            pythonTools
+            nixTools
+            workflowTools
+            ;
+          packages = pythonTools ++ nixTools ++ workflowTools;
+        };
     in
     {
       lib = {
@@ -186,8 +213,6 @@
           mkValidatedPack
           ;
       };
-
-      formatter = forAllSystems (system: nixpkgs.legacyPackages.${system}.nixfmt-tree);
 
       packages = forAllSystems (
         system:
@@ -202,25 +227,40 @@
         }
       );
 
+      formatter = forAllSystems (system: nixpkgs.legacyPackages.${system}.nixfmt-tree);
+
+      devShells = forAllSystems (
+        system:
+        let
+          pkgs = nixpkgs.legacyPackages.${system};
+          tools = lintTools pkgs;
+        in
+        {
+          default = pkgs.mkShellNoCC {
+            inherit (tools) packages;
+          };
+        }
+      );
+
       checks = forAllSystems (
         system:
         let
           pkgs = nixpkgs.legacyPackages.${system};
           inherit (pkgs) lib;
-          python = pkgs.python3.withPackages (ps: [ ps.tomli-w ]);
+          tools = lintTools pkgs;
           guiPython = pkgs.python3.withPackages (ps: [
             ps.pygobject3
             ps.tomli-w
           ]);
         in
         {
-          default = self.packages.${system}.default;
+          inherit (self.packages.${system}) default;
 
           validated-pack = mkValidatedPack {
             inherit pkgs;
             kind = "demo";
             javaVersion = "21";
-            pack = pkgs.runCommand "example-fabric-pack" { nativeBuildInputs = [ python ]; } ''
+            pack = pkgs.runCommand "example-fabric-pack" { nativeBuildInputs = [ tools.python ]; } ''
               export PYTHONPATH="${./src}:${./tests/fixtures}"
               python3 -c 'import sys; from pathlib import Path; from minecraft_pack_fixture import fixture; fixture(Path(sys.argv[1]))' "$out"
             '';
@@ -230,7 +270,7 @@
             pkgs.runCommand "minecraft-pack-tools-unit-tests"
               {
                 nativeBuildInputs = [
-                  python
+                  tools.python
                   pkgs.coreutils
                 ];
               }
@@ -273,18 +313,14 @@
                     ./tests
                   ];
                 };
-                nativeBuildInputs = [
-                  python
-                  pkgs.ruff
-                  pkgs.pyright
-                ];
+                nativeBuildInputs = tools.pythonTools;
               }
               ''
                 cd "$src"
                 export HOME="$TMPDIR"
                 ruff check --no-cache src tests
                 ruff format --check --no-cache src tests
-                pyright --project pyrightconfig.json --pythonpath ${lib.getExe python}
+                pyright --project pyrightconfig.json --pythonpath ${lib.getExe tools.python}
                 touch "$out"
               '';
 
@@ -295,18 +331,12 @@
                   root = ./.;
                   fileset = lib.fileset.fileFilter (file: file.hasExt "nix") ./.;
                 };
-                nativeBuildInputs = [
-                  pkgs.nixfmt-tree
-                  pkgs.statix
-                  pkgs.deadnix
-                ];
+                nativeBuildInputs = tools.nixTools;
               }
               ''
-                cp -r "$src" "$TMPDIR/src"
-                chmod -R u+w "$TMPDIR/src"
-                cd "$TMPDIR/src"
+                cd "$src"
                 export HOME="$TMPDIR"
-                ${lib.getExe pkgs.nixfmt-tree} --no-cache --tree-root . --ci
+                find . -name '*.nix' -type f -exec nixfmt --check {} +
                 statix check .
                 deadnix --fail .
                 touch "$out"
@@ -319,11 +349,7 @@
                   root = ./.;
                   fileset = ./.github;
                 };
-                nativeBuildInputs = [
-                  pkgs.actionlint
-                  pkgs.shellcheck
-                  pkgs.zizmor
-                ];
+                nativeBuildInputs = tools.workflowTools;
               }
               ''
                 cd "$src"

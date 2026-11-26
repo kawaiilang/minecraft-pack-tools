@@ -77,7 +77,17 @@ GUI は英語（`en`）・日本語（`ja`）に対応しており、`src/minecr
 
 ## 開発・テスト
 
+リポジトリのルートで開発シェルに入ると、`tomli-w` 入りの Python と、Python・Nix・ワークフローの lint ツールを使えます。たとえば、GUI を使わない単体テストを直接実行できます。
+
 ```bash
+nix develop
+PYTHONPATH=src:tests:tests/fixtures python3 -m unittest -v test_cli test_i18n test_fabric test_transaction
+```
+
+Nix ファイルを整形し、Xvfb 上の GTK4 テストを含む全チェックを実行するには、次のコマンドを使います。
+
+```bash
+nix fmt
 nix flake check
 ```
 

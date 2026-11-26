@@ -77,7 +77,19 @@ Available outputs:
 
 ## Development & Testing
 
+From the repository root, enter the development shell to use Python with
+`tomli-w` and the Python, Nix and workflow linters. For example, run the
+headless tests directly:
+
 ```bash
+nix develop
+PYTHONPATH=src:tests:tests/fixtures python3 -m unittest -v test_cli test_i18n test_fabric test_transaction
+```
+
+Format the Nix files and run all checks, including the GTK4 test under Xvfb:
+
+```bash
+nix fmt
 nix flake check
 ```
 
