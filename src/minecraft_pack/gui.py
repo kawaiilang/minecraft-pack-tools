@@ -312,9 +312,7 @@ class ManagerWindow(Gtk.ApplicationWindow):
             return
         self.set_busy(True)
         if not keep_result:
-            self.status.set_text(
-                self.i18n.tr("status.running", operation=operation)
-            )
+            self.status.set_text(self.i18n.tr("status.running", operation=operation))
             self.log.get_buffer().set_text("")
         argv = [
             resolve_cli_command(self.command_dir),

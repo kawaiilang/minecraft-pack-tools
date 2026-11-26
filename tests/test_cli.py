@@ -18,9 +18,10 @@ from minecraft_pack.transaction import packwiz_arguments
 class PackCliTests(PackTestCase):
     def _cli_env(self) -> dict[str, str]:
         env = dict(os.environ)
-        src = str(Path(__file__).resolve().parents[1] / "src")
+        # Subprocesses can change cwd; reuse the package imported by this test.
+        package_root = Path(json_guard.__file__).resolve().parents[1]
         existing = env.get("PYTHONPATH", "")
-        env["PYTHONPATH"] = f"{src}:{existing}" if existing else src
+        env["PYTHONPATH"] = os.pathsep.join(filter(None, [str(package_root), existing]))
         env["MINECRAFT_JAVA_VERSION"] = "25"
         env.pop("MINECRAFT_PACK_POLICY", None)
         return env

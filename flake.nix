@@ -187,6 +187,8 @@
           ;
       };
 
+      formatter = forAllSystems (system: nixpkgs.legacyPackages.${system}.nixfmt-tree);
+
       packages = forAllSystems (
         system:
         let
@@ -259,9 +261,18 @@
                 touch "$out"
               '';
 
-          lint =
-            pkgs.runCommand "minecraft-pack-tools-lint"
+          lint-python =
+            pkgs.runCommand "minecraft-pack-tools-lint-python"
               {
+                src = lib.fileset.toSource {
+                  root = ./.;
+                  fileset = lib.fileset.unions [
+                    ./pyproject.toml
+                    ./pyrightconfig.json
+                    ./src
+                    ./tests
+                  ];
+                };
                 nativeBuildInputs = [
                   python
                   pkgs.ruff
@@ -269,10 +280,57 @@
                 ];
               }
               ''
-                cd ${./.}
+                cd "$src"
                 export HOME="$TMPDIR"
                 ruff check --no-cache src tests
+                ruff format --check --no-cache src tests
                 pyright --project pyrightconfig.json --pythonpath ${lib.getExe python}
+                touch "$out"
+              '';
+
+          lint-nix =
+            pkgs.runCommand "minecraft-pack-tools-lint-nix"
+              {
+                src = lib.fileset.toSource {
+                  root = ./.;
+                  fileset = lib.fileset.fileFilter (file: file.hasExt "nix") ./.;
+                };
+                nativeBuildInputs = [
+                  pkgs.nixfmt-tree
+                  pkgs.statix
+                  pkgs.deadnix
+                ];
+              }
+              ''
+                cp -r "$src" "$TMPDIR/src"
+                chmod -R u+w "$TMPDIR/src"
+                cd "$TMPDIR/src"
+                export HOME="$TMPDIR"
+                ${lib.getExe pkgs.nixfmt-tree} --no-cache --tree-root . --ci
+                statix check .
+                deadnix --fail .
+                touch "$out"
+              '';
+
+          lint-workflows =
+            pkgs.runCommand "minecraft-pack-tools-lint-workflows"
+              {
+                src = lib.fileset.toSource {
+                  root = ./.;
+                  fileset = ./.github;
+                };
+                nativeBuildInputs = [
+                  pkgs.actionlint
+                  pkgs.shellcheck
+                  pkgs.zizmor
+                ];
+              }
+              ''
+                cd "$src"
+                export HOME="$TMPDIR"
+                find .github/workflows -type f \( -name '*.yml' -o -name '*.yaml' \) \
+                  -exec actionlint -shellcheck ${lib.getExe pkgs.shellcheck} {} +
+                zizmor --offline .github
                 touch "$out"
               '';
         }

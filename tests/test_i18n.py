@@ -83,9 +83,7 @@ class I18nTests(unittest.TestCase):
             "en",
         )
         self.assertEqual(
-            detect_locale(
-                environ={"LC_ALL": "ja_JP.UTF-8", "LANG": "en_US.UTF-8"}
-            ),
+            detect_locale(environ={"LC_ALL": "ja_JP.UTF-8", "LANG": "en_US.UTF-8"}),
             "ja",
         )
         self.assertEqual(

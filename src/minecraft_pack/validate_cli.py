@@ -12,8 +12,12 @@ def main(argv: list[str] | None = None) -> int:
         prog="minecraft-pack-validate",
         description="Validate pack source, hashes, Fabric compatibility lock, and exported .mrpack without network access.",
     )
-    parser.add_argument("pack_dir", type=path_argument, help="Path to the pack directory")
-    parser.add_argument("kind", nargs="?", default="mod", help="Pack kind (default: mod)")
+    parser.add_argument(
+        "pack_dir", type=path_argument, help="Path to the pack directory"
+    )
+    parser.add_argument(
+        "kind", nargs="?", default="mod", help="Pack kind (default: mod)"
+    )
     add_validation_options(parser)
     args = parser.parse_args(argv)
     try:
