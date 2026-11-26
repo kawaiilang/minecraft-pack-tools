@@ -1,24 +1,34 @@
-name: Tests
+name: CI
 
 on:
   push:
+    branches:
+      - main
   pull_request:
   workflow_dispatch:
 
-permissions:
-  contents: read
+permissions: {}
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
-  test:
+  python-ubuntu:
+    name: Python (Ubuntu)
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
-      - name: Install dependencies and run unit + GUI tests
+      - name: Install dependencies and run unit and GUI tests
+        shell: bash
         run: |
+          set -euo pipefail
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends \
             python3-venv python3-setuptools python3-wheel python3-tomli-w \
@@ -32,14 +42,26 @@ jobs:
           xvfb-run -a .venv/bin/python tests/test_gui.py
 
   nix-checks:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    name: Nix (${{ matrix.system }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - system: x86_64-linux
+            runner: ubuntu-24.04
+          - system: aarch64-linux
+            runner: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+
       - uses: cachix/install-nix-action@382a9ed9481c7c1f94f68b72ef105b3417c73877 # v32.1.0
+
       - name: Run flake checks
-        run: >-
-          nix build --no-link --no-update-lock-file
-          .#checks.x86_64-linux.lint
+        shell: bash
+        run: nix flake check --no-update-lock-file --print-build-logs
